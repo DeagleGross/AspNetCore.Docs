@@ -1,10 +1,11 @@
 ---
 title: Implement passkeys in ASP.NET Core Blazor Web Apps
+ai-usage: ai-assisted
 author: guardrex
 description: Learn how to implement passkeys authentication in ASP.NET Core Blazor Web Apps.
 ms.author: wpickett
 monikerRange: '>= aspnetcore-10.0'
-ms.date: 10/30/2025
+ms.date: 09/18/2026
 uid: security/authentication/passkeys/blazor
 zone_pivot_groups: implementation
 ---
@@ -209,6 +210,16 @@ Update the `IdentityComponentsEndpointRouteBuilderExtensions.cs` file (or create
 
 [`/PasskeyCreationOptions` and `/PasskeyRequestOptions` endpoints](https://github.com/dotnet/aspnetcore/blob/main/src/ProjectTemplates/Web.ProjectTemplates/content/BlazorWeb-CSharp/BlazorWebCSharp.1/Components/Account/IdentityComponentsEndpointRouteBuilderExtensions.cs#L53-L90)
 
+:::moniker range=">= aspnetcore-12.0"
+
+Also add the `/PasskeyRegistrationOptions` endpoint, which is anonymous and lets a visitor create a passkey before an account exists:
+
+[`/PasskeyRegistrationOptions` endpoint](https://github.com/dotnet/aspnetcore/blob/main/src/ProjectTemplates/Web.ProjectTemplates/content/BlazorWeb-CSharp/BlazorWebCSharp.1/Components/Account/IdentityComponentsEndpointRouteBuilderExtensions.cs)
+
+Unlike the other passkey endpoints, `/PasskeyRegistrationOptions` doesn't require authorization or reference an existing user, because no account exists yet when the ceremony starts. The endpoint validates the submitted email address with the same `UserManager<TUser>` validators that `CreateAsync` uses, so an invalid or already-taken address is rejected before the user is prompted for a passkey.
+
+:::moniker-end
+
 ## Update the Login page
 
 Replace the existing `Login` component with the following component and update the `BlazorWebCSharp._1.Data` namespace to match the app (for example: `Contoso.Components.Account.Data`):
@@ -274,6 +285,20 @@ To test passkey functionality:
 1. Select **Passkeys** from the navigation menu.
 1. Select **Add a new passkey**
 1. Follow the browser's prompts to create a passkey using your device's authenticator.
+
+:::moniker range=">= aspnetcore-12.0"
+
+## Sign up with a passkey during registration
+
+The `Register` page includes a **Sign up with a passkey** option so that a visitor can create an account without setting a password:
+
+1. On the registration page, enter an email address.
+1. Select **Sign up with a passkey**.
+1. Follow the browser's prompts to create a passkey using your device's authenticator.
+
+The registration endpoint validates the email address with the same rules used when an account is created with a password, so the browser doesn't prompt for a passkey if the address is invalid or already taken. The account is created only after the passkey ceremony succeeds, and the new account is bound to the identifier that was used to create the passkey.
+
+:::moniker-end
 
 ## Sign in with a passkey
 
