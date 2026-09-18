@@ -4,7 +4,7 @@ author: guardrex
 description: Learn how to use component virtualization in ASP.NET Core Blazor apps.
 monikerRange: '>= aspnetcore-5.0'
 ms.author: wpickett
-ms.date: 07/14/2026
+ms.date: 09/18/2026
 uid: blazor/components/virtualization
 ---
 # ASP.NET Core Razor component virtualization
@@ -330,6 +330,16 @@ Assign a `VirtualizeAnchorMode` value to the `AnchorMode` parameter to control h
 * `None`: No edge pinning. The viewport stays at the current scroll position regardless of item changes.
 * `Start`: Pins the viewport to the start of the list. When the user is at a scroll position near the top of the list and new items arrive at the start, the viewport stays at the top showing the newest items. For example, this pinning behavior is useful for a news feed user experience.
 * `End`: Pins the viewport to the end of the list. When the user is at a scroll position near the bottom of the list and new items arrive at the end, the viewport auto-scrolls to show them. If the user has scrolled away, auto-scroll disengages until they return to the bottom. For example, this pinning behavior is useful for a chat or logging user experience.
+
+:::moniker-end
+
+:::moniker range=">= aspnetcore-11.0 < aspnetcore-12.0"
+
+`AnchorMode` and `ItemComparer` (described later in this section) are experimental APIs that require opting in to the `ASP0030` diagnostic.
+
+:::moniker-end
+
+:::moniker range=">= aspnetcore-11.0"
 
 The following example pins the viewport to the start of a virtualized flight list:
 
