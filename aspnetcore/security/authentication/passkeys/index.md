@@ -5,7 +5,7 @@ author: guardrex
 description: Discover how to enable Web Authentication API (WebAuthn) passkeys in ASP.NET Core apps.
 ms.author: wpickett
 monikerRange: '>= aspnetcore-10.0'
-ms.date: 08/07/2026
+ms.date: 09/18/2026
 uid: security/authentication/passkeys/index
 ---
 # Enable Web Authentication API (WebAuthn) passkeys
@@ -848,6 +848,93 @@ const credentialJson = JSON.stringify({
 ```
 
 The preceding workaround is only required until the password manager is updated to implement the `PublicKeyCredential.toJSON` method correctly. We recommend tracking your password manager's release notes and reverting the preceding changes after the password manager is updated.
+
+:::moniker range=">= aspnetcore-12.0"
+
+## Advertise the well-known passkey endpoints document
+
+Credential managers can discover whether an app supports passkeys and where a user can create or manage them by fetching the [well-known passkey endpoints document](https://w3c.github.io/webappsec-passkey-endpoints/) at `/.well-known/passkey-endpoints`. This lets a credential manager offer to upgrade a saved password to a passkey without the user having to find the relevant page.
+
+> [!NOTE]
+> `AddPasskeyEndpoints`, `MapWellKnownPasskeyEndpoints`, and the related types are marked experimental (`ASP0039`) in this release. Suppress the diagnostic with a `<NoWarn>` property, a `#pragma warning disable ASP0039` directive, or an `.editorconfig` rule (`dotnet_diagnostic.ASP0039.severity = none`) to use these APIs.
+
+Configure the advertised locations with <xref:Microsoft.Extensions.DependencyInjection.PasskeyEndpointsServiceCollectionExtensions.AddPasskeyEndpoints%2A>, and serve the document with <xref:Microsoft.AspNetCore.Routing.PasskeyEndpointsEndpointRouteBuilderExtensions.MapWellKnownPasskeyEndpoints%2A>:
+
+```csharp
+builder.Services.AddPasskeyEndpoints(options =>
+{
+    options.Enroll = "/Account/Manage/Passkeys";
+    options.Manage = "/Account/Manage/Passkeys";
+});
+
+var app = builder.Build();
+
+app.MapWellKnownPasskeyEndpoints();
+```
+
+A request to `https://contoso.com/.well-known/passkey-endpoints` then responds with:
+
+```json
+{
+  "enroll": "https://contoso.com/Account/Manage/Passkeys",
+  "manage": "https://contoso.com/Account/Manage/Passkeys"
+}
+```
+
+<xref:Microsoft.AspNetCore.Identity.PasskeyEndpointsOptions> exposes three members, each of which may be an absolute URL or a path relative to the app that's resolved against the current request:
+
+* <xref:Microsoft.AspNetCore.Identity.PasskeyEndpointsOptions.Enroll%2A>: The page where a user can create a new passkey. If left `null`, the `enroll` member is omitted from the document.
+* <xref:Microsoft.AspNetCore.Identity.PasskeyEndpointsOptions.Manage%2A>: The page where a user can manage their existing passkeys. If left `null`, the `manage` member is omitted from the document.
+* <xref:Microsoft.AspNetCore.Identity.PasskeyEndpointsOptions.PrfUsageDetails%2A>: An informational page describing how the app uses the WebAuthn pseudo-random function (PRF) extension. If left `null`, the `prfUsageDetails` member is omitted from the document.
+
+If none of the three options are configured, the endpoint serves an empty document, which the specification defines as signaling support for passkeys without advertising specific pages.
+
+Keep the following in mind when mapping the endpoint:
+
+* The endpoint allows anonymous `GET` and `HEAD` requests, because credential managers fetch the document without a user session and the specification doesn't allow a redirect to be returned.
+* Relative option values are resolved against the scheme, host, and path base of the incoming request. An app behind a reverse proxy should call `UseForwardedHeaders()` early in the pipeline, and should restrict the hosts it accepts, so the advertised locations reflect the real scheme and host rather than internal ones.
+* The specification requires the document to be served from the root of the origin. Mapping the endpoint into a route group with a prefix logs an error when the app's endpoints are built, because no credential manager looks for the document at a non-root path.
+* The response includes a `Cache-Control: no-store` header, because the document's body is built from the request and must not be reused across origins by a shared cache.
+
+The `BlazorWeb-CSharp` project template calls `AddPasskeyEndpoints` and `MapWellKnownPasskeyEndpoints` to advertise its **Manage passkeys** page automatically.
+
+## Signal passkey changes to the browser (WebAuthn signals API)
+
+WebAuthn defines three [signal methods](https://www.w3.org/TR/webauthn-3/#sctn-signal-methods) that let an app tell the browser's passkey provider what the server currently knows about a user's passkeys. Without these signals, a deleted passkey can keep being offered at sign-in, a renamed user can stay stale next to their passkey, and a credential the server has never heard of can never be cleared from the authenticator. <xref:Microsoft.AspNetCore.Identity.SignInManager%601> adds one method per signal, each of which returns a JSON string that's passed unchanged to the corresponding JavaScript API:
+
+* <xref:Microsoft.AspNetCore.Identity.SignInManager%601.MakeAllAcceptedCredentialsSignalOptionsAsync%2A>: Generates options for `PublicKeyCredential.signalAllAcceptedCredentials()`, which lets the authenticator stop offering passkeys that were removed from the server. Because the options reveal how many passkeys a user has, only call this method when the user is authenticated.
+* <xref:Microsoft.AspNetCore.Identity.SignInManager%601.MakeCurrentUserDetailsSignalOptionsAsync%2A>: Generates options for `PublicKeyCredential.signalCurrentUserDetails()`, which keeps the user's details up to date on the authenticator. Only call this method when the user is authenticated.
+* <xref:Microsoft.AspNetCore.Identity.SignInManager%601.MakeUnknownCredentialSignalOptionsAsync%2A>: Generates options for `PublicKeyCredential.signalUnknownCredential()`, which permanently deletes a passkey from the browser's passkey provider. The method only returns options when no user on the server has the credential; a `null` result means don't signal.
+
+Check <xref:Microsoft.AspNetCore.Identity.SignInManager%601.SupportsPasskeySignalOptions%2A> before calling `MakeAllAcceptedCredentialsSignalOptionsAsync` or `MakeCurrentUserDetailsSignalOptionsAsync`, which throw <xref:System.NotSupportedException> when the registered <xref:Microsoft.AspNetCore.Identity.IPasskeyHandler%601> doesn't support passkey signal options:
+
+```csharp
+if (SignInManager.SupportsPasskeySignalOptions)
+{
+    var acceptedJson = await SignInManager.MakeAllAcceptedCredentialsSignalOptionsAsync(user);
+    var detailsJson = await SignInManager.MakeCurrentUserDetailsSignalOptionsAsync(user, userEntity);
+}
+
+var result = await SignInManager.PasskeySignInAsync(credentialJson);
+
+if (!result.Succeeded)
+{
+    // null means do not signal
+    var unknownJson = await SignInManager.MakeUnknownCredentialSignalOptionsAsync(credentialJson);
+}
+```
+
+```javascript
+await PublicKeyCredential.signalAllAcceptedCredentials?.(JSON.parse(acceptedJson));
+await PublicKeyCredential.signalCurrentUserDetails?.(JSON.parse(detailsJson));
+await PublicKeyCredential.signalUnknownCredential?.(JSON.parse(unknownJson));
+```
+
+The `BlazorWeb-CSharp` project template includes components that call these signal methods: an `AllAcceptedCredentialsSignal` component on the manage passkeys page, a `CurrentUserDetailsSignal` component on the profile page, and an unknown credential signal on the login page.
+
+A custom <xref:Microsoft.AspNetCore.Identity.IPasskeyHandler%601> implementation can opt in to supporting the signal methods by implementing <xref:Microsoft.AspNetCore.Identity.IPasskeyHandler%601.MakeAllAcceptedCredentialsSignalOptionsAsync%2A>, <xref:Microsoft.AspNetCore.Identity.IPasskeyHandler%601.MakeCurrentUserDetailsSignalOptionsAsync%2A>, and <xref:Microsoft.AspNetCore.Identity.IPasskeyHandler%601.MakeUnknownCredentialSignalOptionsAsync%2A>, and returning `true` from <xref:Microsoft.AspNetCore.Identity.IPasskeyHandler%601.SupportsPasskeySignalOptions%2A>. The default <xref:Microsoft.AspNetCore.Identity.PasskeyHandler%601> implements all three methods.
+
+:::moniker-end
 
 ## Additional resources
 
