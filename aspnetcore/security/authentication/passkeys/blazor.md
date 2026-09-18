@@ -1,10 +1,11 @@
 ---
 title: Implement passkeys in ASP.NET Core Blazor Web Apps
+ai-usage: ai-assisted
 author: guardrex
 description: Learn how to implement passkeys authentication in ASP.NET Core Blazor Web Apps.
 ms.author: wpickett
 monikerRange: '>= aspnetcore-10.0'
-ms.date: 10/30/2025
+ms.date: 09/18/2026
 uid: security/authentication/passkeys/blazor
 zone_pivot_groups: implementation
 ---
@@ -189,7 +190,7 @@ dotnet ef database update
 Add the following model classes to the project in the `Components/Account` folder and update the `BlazorWebCSharp._1.Components.Account` namespace to match the app (for example: `Contoso.Components.Account`):
 
 * [`Components/Account/PasskeyInputModel.cs`](https://github.com/dotnet/aspnetcore/blob/main/src/ProjectTemplates/Web.ProjectTemplates/content/BlazorWeb-CSharp/BlazorWebCSharp.1/Components/Account/PasskeyInputModel.cs): Holds the JSON passkey credential for passkey sign-in operations (`Login` component) and adding passkeys (`Passkeys` component).
-* [`Components/Account/PasskeyOperation.cs`](https://github.com/dotnet/aspnetcore/blob/main/src/ProjectTemplates/Web.ProjectTemplates/content/BlazorWeb-CSharp/BlazorWebCSharp.1/Components/Account/PasskeyOperation.cs): Defines the authentication action to be performed (`PassKeySubmit` component), either registering a new passkey (`Create`/0) or authenticating with an existing passkey (`Request`/1).
+* [`Components/Account/PasskeyOperation.cs`](https://github.com/dotnet/aspnetcore/blob/main/src/ProjectTemplates/Web.ProjectTemplates/content/BlazorWeb-CSharp/BlazorWebCSharp.1/Components/Account/PasskeyOperation.cs): Defines the authentication action to be performed (`PassKeySubmit` component): registering a new passkey (`Create`/0), authenticating with an existing passkey (`Request`/1), reauthenticating (`Reauthenticate`/2), upgrading a discoverable credential (`Upgrade`/3), or registering a new account with a passkey (`Register`/4).
 
 ## Create the `PasskeySubmit` component
 
@@ -207,13 +208,23 @@ Add the following JavaScript file to handle WebAuthn API interactions:
 
 Update the `IdentityComponentsEndpointRouteBuilderExtensions.cs` file (or create the file if it doesn't exist and call `MapAdditionalIdentityEndpoints` in the [`Program` file](https://github.com/dotnet/aspnetcore/blob/main/src/ProjectTemplates/Web.ProjectTemplates/content/BlazorWeb-CSharp/BlazorWebCSharp.1/Program.cs#L129-L130)) to include the passkey-specific endpoints:
 
-[`/PasskeyCreationOptions` and `/PasskeyRequestOptions` endpoints](https://github.com/dotnet/aspnetcore/blob/main/src/ProjectTemplates/Web.ProjectTemplates/content/BlazorWeb-CSharp/BlazorWebCSharp.1/Components/Account/IdentityComponentsEndpointRouteBuilderExtensions.cs#L53-L90)
+[`/PasskeyCreationOptions`, `/PasskeyRequestOptions`, and `/PasskeyRegistrationOptions` endpoints](https://github.com/dotnet/aspnetcore/blob/main/src/ProjectTemplates/Web.ProjectTemplates/content/BlazorWeb-CSharp/BlazorWebCSharp.1/Components/Account/IdentityComponentsEndpointRouteBuilderExtensions.cs#L81-L140)
+
+The `/PasskeyRegistrationOptions` endpoint allows a visitor who doesn't have an account yet to create a passkey during registration. Because the endpoint is anonymous, it never looks up or reuses an existing account: a new user ID is generated for the passkey ceremony, and the supplied email address is validated with the same user validators that `UserManager<TUser>.CreateAsync` uses before any passkey creation options are returned.
 
 ## Update the Login page
 
 Replace the existing `Login` component with the following component and update the `BlazorWebCSharp._1.Data` namespace to match the app (for example: `Contoso.Components.Account.Data`):
 
 [`Components/Account/Pages/Login.razor`](https://github.com/dotnet/aspnetcore/blob/main/src/ProjectTemplates/Web.ProjectTemplates/content/BlazorWeb-CSharp/BlazorWebCSharp.1/Components/Account/Pages/Login.razor)
+
+## Update the Register page
+
+Replace the existing `Register` component with the following component and update the `BlazorWebCSharp._1.Data` namespace to match the app (for example: `Contoso.Components.Account.Data`):
+
+[`Components/Account/Pages/Register.razor`](https://github.com/dotnet/aspnetcore/blob/main/src/ProjectTemplates/Web.ProjectTemplates/content/BlazorWeb-CSharp/BlazorWebCSharp.1/Components/Account/Pages/Register.razor)
+
+The updated `Register` component adds a **Sign up with a passkey** option next to the password registration form. Selecting the option creates a passkey for the entered email address without requiring a password. The passkey ceremony runs against the anonymous `/PasskeyRegistrationOptions` endpoint, and the account is only created after the browser returns a successful attestation for an email address that passed validation.
 
 ## Add a redirect method to the `IdentityRedirectManager` class
 
@@ -274,6 +285,16 @@ To test passkey functionality:
 1. Select **Passkeys** from the navigation menu.
 1. Select **Add a new passkey**
 1. Follow the browser's prompts to create a passkey using your device's authenticator.
+
+### Sign up with a passkey
+
+To register a new account without a password:
+
+1. On the registration page, enter an email address.
+1. Select **Sign up with a passkey**.
+1. Follow the browser's prompts to create a passkey using your device's authenticator.
+
+The account is created with the passkey as its only credential after the browser returns a successful attestation for the entered email address.
 
 ## Sign in with a passkey
 
